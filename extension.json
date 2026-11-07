@@ -1,0 +1,43 @@
+{
+	"name": "strain-bridge-designer",
+	"uuid": "96fe8e132b734429971907918d5e40a9",
+	"displayName": "应变片设计",
+	"description": "四象限设计(单面)：参数化布局、分阶段绘图与配置管理",
+	"version": "0.2.0",
+	"publisher": "G-dab",
+	"engines": {
+		"eda": ">=4.1.60"
+	},
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/G-dab/easyeda-strain-gauge-designer.git"
+	},
+	"categories": "Other",
+	"keywords": [
+		"Tool"
+	],
+	"images": {
+		"logo": "./images/logo.svg"
+	},
+	"homepage": "https://github.com/G-dab/easyeda-strain-gauge-designer",
+	"bugs": "https://github.com/G-dab/easyeda-strain-gauge-designer/issues",
+	"activationEvents": {},
+	"entry": "./dist/index",
+	"dependentExtensions": {},
+	"headerMenus": {
+		"pcb": [
+			{
+				"id": "strain-bridge-menu",
+				"title": "应变片设计",
+				"menuItems": [
+					{
+						"id": "open-designer",
+						"title": "打开设计器",
+						"registerFn": "openDesigner"
+					}
+				]
+			}
+		]
+	}
+}
