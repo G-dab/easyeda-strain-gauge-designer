@@ -4,7 +4,9 @@ import test from 'node:test';
 
 import { Adapter, milToMm, mmToMil, newSession, validateSession } from '../src/adapter';
 
-import { build, changedStage, check, connectivity, defaults, distance, parameters, stats, svg } from '../src/geometry';
+import { bounds, build, changedStage, check, connectivity, defaults, distance, parameters, stats, svg } from '../src/geometry';
+
+import { rectangleDistance, segmentInside } from '../src/routing-math';
 
 Object.assign(globalThis, { EPCB_PrimitivePadShapeType: { RECTANGLE: 'RECT' }, ESYS_Unit: { MILLIMETER: 'mm' } });
 
@@ -272,6 +274,11 @@ test('all 24 terminal orders route on two layers for pads and fingers', () => {
 			assert.deepEqual(check(d), [], `${terminalMode}:${order}`);
 			assert.deepEqual(connectivity(d), [], `${terminalMode}:${order}`);
 			assert.equal(d.pads.length, 4);
+			for (const t of d.tracks.filter(t => t.stage === 3)) {
+				const dx = Math.abs(t.b[0] - t.a[0]);
+				const dy = Math.abs(t.b[1] - t.a[1]);
+				assert.ok(dx < 1e-7 || dy < 1e-7 || Math.abs(dx - dy) < 1e-7, `Non-octilinear copper: ${JSON.stringify(t)}`);
+			}
 			assert.ok(d.pads.every(v => v.center[1] > Math.max(...d.nodes.map(n => n.point[1]))));
 			assert.deepEqual(stats(d), stats(build(defaults)));
 			assert.ok(d.outline.length > 5);
@@ -345,5 +352,54 @@ test('partial tail failure keeps completed bridge stages and does not duplicate 
 	await f.adapter.generate(s, p, 3, true);
 	assert.deepEqual(s.records.filter(r => r.stage <= 2).map(r => r.id), bridgeIds);
 	assert.equal(s.records.filter(r => r.stage <= 2).length, coreCount);
+	assert.deepEqual((await f.adapter.read(s)).issues, []);
+});
+
+test('default routing uses compact 45-degree channels and a straight parallel tail', () => {
+	const p = { ...defaults, terminalMode: 2 };
+	const d = build(p);
+	const old = build(p, 1);
+	const routes = d.tracks.filter(t => t.stage === 3);
+	assert.deepEqual(check(d), []);
+	assert.equal(d.vias.length, 0);
+	assert.ok(routes.length < old.tracks.filter(t => t.stage === 3).length / 2);
+	assert.ok(bounds(d).width < bounds(old).width);
+	assert.deepEqual(bounds(d), bounds(build({ ...p, viaDiameter: 0.8 })));
+	const entry = d.outline[3][1];
+	for (const pad of d.pads) {
+		const tail = routes.filter(t => t.owner === pad.name && (t.a[1] > entry || t.b[1] > entry));
+		assert.ok(tail.length);
+		assert.ok(tail.every(t => Math.abs(t.a[0] - pad.center[0]) < 1e-7 && Math.abs(t.b[0] - pad.center[0]) < 1e-7));
+	}
+});
+
+test('diagonal checks use exact rectangle and polygon distances', () => {
+	assert.ok(rectangleDistance([-3, 0], [0, 3], [0, 0], 2, 2) > 0.7);
+	assert.equal(rectangleDistance([-2, -2], [2, 2], [0, 0], 2, 2), 0);
+	assert.equal(segmentInside([1, 5], [9, 5], [[0, 0], [10, 0], [10, 10], [5.01, 10], [5.01, 4], [5, 4], [5, 10], [0, 10], [0, 0]], 0.01), false);
+});
+
+test('generated 0.2.0 configurations retain old copper until tail is explicitly rebuilt', async () => {
+	const f = fixture();
+	const p = { ...defaults, terminalMode: 2 };
+	const original = newSession(p);
+	original.routerVersion = 1;
+	await f.adapter.generate(original, p, 4);
+	const serialized = JSON.parse(JSON.stringify(original));
+	delete serialized.routerVersion;
+	const s = validateSession(serialized);
+	assert.equal(s.routerVersion, 1);
+	const ids = s.records.map(r => r.id);
+	const oldRoutes = s.actual!.tracks.filter(t => t.stage === 3);
+	await f.adapter.generate(s, p, 4);
+	assert.deepEqual(s.records.map(r => r.id), ids);
+	assert.equal(s.routerVersion, 1);
+	assert.deepEqual((await f.adapter.read(s)).issues, []);
+	const bridgeIds = s.records.filter(r => r.stage <= 2).map(r => r.id);
+	await f.adapter.generate(s, p, 3, true);
+	assert.equal(s.routerVersion, 2);
+	assert.deepEqual(s.records.filter(r => r.stage <= 2).map(r => r.id), bridgeIds);
+	assert.ok(s.actual!.tracks.filter(t => t.stage === 3).length < oldRoutes.length);
+	await f.adapter.generate(s, p, 4);
 	assert.deepEqual((await f.adapter.read(s)).issues, []);
 });

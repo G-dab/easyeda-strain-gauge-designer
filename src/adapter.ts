@@ -8,13 +8,13 @@ export const milToMm = (mil: number) => mil * 0.0254;
 
 export interface RecordItem { id: string; kind: 'line' | 'pad' | 'via' | 'outline'; stage: number; owner: string; fingerprint: string }
 
-export interface Session { format: 'strain-bridge-project'; version: 2; template: 'quadrant-orthogonal-tail-v3'; id: string; parameters: Parameters; board?: string; completed: number; records: RecordItem[]; manual: boolean; actual?: Design; draft?: Parameters }
+export interface Session { format: 'strain-bridge-project'; version: 2; template: 'quadrant-orthogonal-tail-v3'; id: string; parameters: Parameters; routerVersion?: 1 | 2; board?: string; completed: number; records: RecordItem[]; manual: boolean; actual?: Design; draft?: Parameters }
 
 export function newSession(p: Parameters): Session {
 	// getRandomValues is available in embedded/insecure contexts where randomUUID is absent.
 	const bytes = globalThis.crypto.getRandomValues(new Uint8Array(8));
 	const id = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
-	return { format: 'strain-bridge-project', version: 2, template: 'quadrant-orthogonal-tail-v3', id, parameters: p, completed: 0, records: [], manual: false };
+	return { format: 'strain-bridge-project', version: 2, template: 'quadrant-orthogonal-tail-v3', id, parameters: p, routerVersion: 2, completed: 0, records: [], manual: false };
 }
 
 export function validateSession(input: unknown): Session {
@@ -31,6 +31,10 @@ export function validateSession(input: unknown): Session {
 		throw new Error('配置格式或版本无效。');
 
 	s.parameters = parameters(s.parameters);
+	if (s.routerVersion === undefined)
+		s.routerVersion = s.completed >= 3 && s.records.length ? 1 : 2;
+	if (s.routerVersion !== 1 && s.routerVersion !== 2)
+		throw new Error('配置的布线算法版本无效。');
 
 	if (s.records.some(r => !r.id || !['line', 'pad', 'via', 'outline'].includes(r.kind) || !Number.isInteger(r.stage) || r.stage < 0 || r.stage > 4 || typeof r.fingerprint !== 'string'))
 
@@ -81,7 +85,7 @@ export class Adapter {
 
 		const records: RecordItem[] = [];
 
-		const d = build(s.parameters);
+		const d = build(s.parameters, s.routerVersion || 2);
 
 		d.tracks = [];
 
@@ -173,7 +177,8 @@ export class Adapter {
 
 		const p = parameters(input);
 
-		const d = build(p);
+		const version = rebuild && target <= 3 ? 2 : s.routerVersion || 2;
+		const d = build(p, version);
 
 		const issues = [...check(d, target), ...(target >= 2 ? connectivity({ ...d, tracks: d.tracks.filter(t => t.stage <= target), pads: target >= 3 ? d.pads : [], vias: target >= 3 ? d.vias : [], parameters: target >= 3 ? p : { ...p, terminalMode: 0 } }) : [])];
 
@@ -201,13 +206,13 @@ export class Adapter {
 
 				const actual = s.actual!.tracks.filter(t => t.stage < start).map(signature).sort();
 
-				const expected = build(s.parameters).tracks.filter(t => t.stage < start).map(signature).sort();
+				const expected = build(s.parameters, s.routerVersion || 2).tracks.filter(t => t.stage < start).map(signature).sort();
 
 				if (fp(actual) !== fp(expected))
 
 					throw new Error('前序阶段包含手改。请保留现有图形人工完成，或选择更早的阶段明确重建。');
 
-				if (start > 3 && (fp(s.actual!.pads) !== fp(build(s.parameters).pads) || fp(s.actual!.vias) !== fp(build(s.parameters).vias)))
+				if (start > 3 && (fp(s.actual!.pads) !== fp(build(s.parameters, s.routerVersion || 2).pads) || fp(s.actual!.vias) !== fp(build(s.parameters, s.routerVersion || 2).vias)))
 
 					throw new Error('前序焊盘已修改，请先选择端口阶段明确重建，或人工完成板框。');
 			}
@@ -241,6 +246,7 @@ export class Adapter {
 			return { session: s, message: '该阶段已完成；如需替换，请使用重建操作。' };
 
 		s.parameters = p;
+		s.routerVersion = version;
 
 		s.board = board;
 

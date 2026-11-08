@@ -1,7 +1,7 @@
 {
 	"name": "strain-bridge-designer",
 	"type": "module",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"private": true,
 	"description": "Parameter-driven quadrant orthogonal bridge designer for JLCEDA Pro",
 	"author": "G-dab",

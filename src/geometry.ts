@@ -1,4 +1,6 @@
-import { edgeClearance, inPolygon, pointDistance, routeTail } from './tail-router';
+import { routeLegacyTail } from './legacy-tail-router';
+import { edgeClearance, inPolygon, pointDistance, rectangleDistance, segmentDistance, segmentInside } from './routing-math';
+import { routeTail } from './tail-router';
 
 /** Geometry is expressed in mm, x right / y down. EDA conversion lives in adapter.ts. */
 
@@ -44,7 +46,7 @@ export interface Pad { center: Point; width: number; height: number; name: strin
 
 export interface Via { center: Point; hole: number; diameter: number; owner: string; stage: number }
 
-export interface Design { vias: Via[]; nodes: { name: string; point: Point }[]; routingIssues: string[]; tracks: Track[]; pads: Pad[]; outline: Point[]; arms: { name: string; center: Point; horizontal: boolean; terminals: Point[] }[]; parameters: Parameters }
+export interface Design { routerVersion?: 1 | 2; vias: Via[]; nodes: { name: string; point: Point }[]; routingIssues: string[]; tracks: Track[]; pads: Pad[]; outline: Point[]; arms: { name: string; center: Point; horizontal: boolean; terminals: Point[] }[]; parameters: Parameters }
 
 export const defaults: Parameters = { length: 4.4, count: 21, width: 0.10, gap: 0.12, thickness: 18, quadrantGap: 0.3, routingWidth: 0.10, terminalMode: 0, allowBack: 1, leadWidth: 0.15, leadGap: 0.12, viaHole: 0.2, viaDiameter: 0.45, tailLength: 12, tailWidth: 2.5, contactPitch: 0.5, contactWidth: 0.35, contactLength: 2, contactInset: 0.3, padPitch: 1.5, tailThickness: 0.3, reinforcementLength: 3, order0: 0, order1: 3, order2: 2, order3: 1, padWidth: 1, padHeight: 1.4, margin: 0.6, originX: 0, originY: 0 };
 
@@ -112,7 +114,7 @@ export function length(t: Track): number {
 	return Math.hypot(t.a[0] - t.b[0], t.a[1] - t.b[1]);
 }
 
-export function build(input: unknown): Design {
+export function build(input: unknown, routerVersion: 1 | 2 = 2): Design {
 	const p = parameters(input);
 
 	const span = (p.count - 1) * (p.width + p.gap);
@@ -191,7 +193,7 @@ export function build(input: unknown): Design {
 	}
 
 	const names = ['E+', 'OUT+', 'E-', 'OUT-'];
-	const d: Design = { parameters: p, tracks, pads: [], arms, outline: [], vias: [], nodes: nodes.map((point, i) => ({ point, name: names[i] })), routingIssues: [] };
+	const d: Design = { routerVersion, parameters: p, tracks, pads: [], arms, outline: [], vias: [], nodes: nodes.map((point, i) => ({ point, name: names[i] })), routingIssues: [] };
 	const copperPoints = tracks.flatMap(t => [t.a, t.b]);
 	const radius = Math.max(p.width, p.routingWidth) / 2;
 	let left = Math.min(...copperPoints.map(p => p[0] - radius)) - p.margin;
@@ -205,7 +207,7 @@ export function build(input: unknown): Design {
 		d.outline = [[left, top], [right, top], [right, bottom], [left, bottom], [left, top]];
 		return d;
 	}
-	const lane = Math.max(0.65, p.leadWidth + p.leadGap + p.viaDiameter);
+	const lane = routerVersion === 1 ? Math.max(0.65, p.leadWidth + p.leadGap + p.viaDiameter) : Math.SQRT2 * (p.leadWidth + p.leadGap + 0.02);
 	const startY = coreBottom + lane;
 	const portWidth = p.terminalMode === 2 ? p.contactWidth : p.padWidth;
 	const portHeight = p.terminalMode === 2 ? p.contactLength : p.padHeight;
@@ -223,7 +225,26 @@ export function build(input: unknown): Design {
 		d.routingIssues.push('尾部长度不足，请增加尾部延伸长度。');
 	if (p.viaDiameter < p.viaHole + 0.2)
 		d.routingIssues.push('过孔外径至少应比孔径大 0.20 mm（当前设计约束）。');
-	const escape = (i: number, points: Point[]) => add(points, p.leadWidth, 3, names[i]);
+	const escape = (i: number, points: Point[]) => {
+		if (routerVersion === 1) {
+			add(points, p.leadWidth, 3, names[i]);
+			return;
+		}
+		const beveled: Point[] = [points[0]];
+		for (let j = 1; j < points.length - 1; j++) {
+			const a = points[j - 1];
+			const b = points[j];
+			const c = points[j + 1];
+			const before = Math.hypot(b[0] - a[0], b[1] - a[1]);
+			const after = Math.hypot(c[0] - b[0], c[1] - b[1]);
+			const r = Math.min(p.leadWidth * 0.8, before / 4, after / 4);
+			if (before > 1e-7 && after > 1e-7)
+				beveled.push([b[0] + (a[0] - b[0]) * r / before, b[1] + (a[1] - b[1]) * r / before], [b[0] + (c[0] - b[0]) * r / after, b[1] + (c[1] - b[1]) * r / after]);
+			else beveled.push(b);
+		}
+		beveled.push(points.at(-1)!);
+		add(beveled, p.leadWidth, 3, names[i]);
+	};
 	const sourcePoints: Point[] = [
 		[coreLeft - 2 * lane, startY],
 		[coreRight + lane, startY],
@@ -243,7 +264,7 @@ export function build(input: unknown): Design {
 	const tailRight = cx + tailWidth / 2;
 	d.outline = [[left, upper], [right, upper], [right, shoulderY], [tailRight, neckY], [tailRight, bottom], [tailLeft, bottom], [tailLeft, neckY], [left, shoulderY], [left, upper]];
 	if (!d.routingIssues.length) {
-		const routed = routeTail(d, sourcePoints.map((point, i) => ({ point, owner: names[i] })), startY);
+		const routed = (routerVersion === 1 ? routeLegacyTail : routeTail)(d, sourcePoints.map((point, i) => ({ point, owner: names[i] })), startY);
 		d.tracks.push(...routed.tracks);
 		d.vias = routed.vias;
 		d.routingIssues.push(...routed.issues);
@@ -251,28 +272,8 @@ export function build(input: unknown): Design {
 	return d;
 }
 
-function pointSegment(p: Point, a: Point, b: Point): number {
-	const dx = b[0] - a[0];
-
-	const dy = b[1] - a[1];
-
-	const den = dx * dx + dy * dy;
-
-	const t = den ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / den)) : 0;
-
-	return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
-}
-
-function cross(a: Point, b: Point, c: Point): number {
-	return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-}
-
 export function distance(a: Track, b: Track): number {
-	if (cross(a.a, a.b, b.a) * cross(a.a, a.b, b.b) < 0 && cross(b.a, b.b, a.a) * cross(b.a, b.b, a.b) < 0)
-
-		return 0;
-
-	return Math.min(pointSegment(a.a, b.a, b.b), pointSegment(a.b, b.a, b.b), pointSegment(b.a, a.a, a.b), pointSegment(b.b, a.a, a.b));
+	return segmentDistance(a.a, a.b, b.a, b.b);
 }
 
 export function check(d: Design, stage = 4): string[] {
@@ -320,12 +321,9 @@ export function check(d: Design, stage = 4): string[] {
 			errors.push('板框超出当前常规 FPC 尺寸档 234 × 490 mm。');
 
 		const safe = (point: Point, r: number, clearance = 0.3) => inPolygon(point, d.outline) && edgeClearance(point, d.outline) >= r + clearance - 1e-6;
-		if (ts.some((t) => {
-			const n = Math.max(1, Math.ceil(length(t) / 0.15));
-			return Array.from({ length: n + 1 }, (_, i) => [t.a[0] + (t.b[0] - t.a[0]) * i / n, t.a[1] + (t.b[1] - t.a[1]) * i / n] as Point).some(v => !safe(v, t.width / 2));
-		})) {
+		if (ts.some(t => !segmentInside(t.a, t.b, d.outline, t.width / 2 + 0.3)))
 			errors.push('实际走线超出板框或到板边距离不足 0.30 mm。');
-		}
+
 		if (d.pads.some(v => [[-1, -1], [-1, 1], [1, -1], [1, 1]].some(([x, y]) => {
 			const point: Point = [v.center[0] + x * v.width / 2, v.center[1] + y * v.height / 2];
 			if (p.terminalMode !== 2)
@@ -352,7 +350,7 @@ export function check(d: Design, stage = 4): string[] {
 
 				continue;
 
-			if (distance(a, b) - (a.width + b.width) / 2 < min - 1e-6) {
+			if (distance(a, b) - (a.width + b.width) / 2 < (a.stage === 3 && b.stage === 3 ? Math.max(min, p.leadGap) : min) - 1e-6) {
 				// A short contiguous corner is a copper union, not a clearance gap.
 
 				const localCorner = ts.some(t => t !== a && t !== b && length(t) < min + (a.width + b.width) / 2 && (([a.a, a.b].some(p => same(p, t.a)) && [b.a, b.b].some(p => same(p, t.b))) || ([a.a, a.b].some(p => same(p, t.b)) && [b.a, b.b].some(p => same(p, t.a)))));
@@ -377,15 +375,7 @@ export function check(d: Design, stage = 4): string[] {
 
 					continue;
 
-				const hw = pad.width / 2 + t.width / 2 + min;
-
-				const hh = pad.height / 2 + t.width / 2 + min;
-
-				const a: Point = [t.a[0] - pad.center[0], t.a[1] - pad.center[1]];
-
-				const b: Point = [t.b[0] - pad.center[0], t.b[1] - pad.center[1]];
-
-				if (Math.min(a[0], b[0]) <= hw && Math.max(a[0], b[0]) >= -hw && Math.min(a[1], b[1]) <= hh && Math.max(a[1], b[1]) >= -hh) {
+				if (rectangleDistance(t.a, t.b, pad.center, pad.width, pad.height) < t.width / 2 + (t.stage === 3 ? Math.max(min, p.leadGap) : min) - 1e-6) {
 					errors.push(`端口 ${pad.name} 与非本节点导体间距不足。`);
 
 					break;

@@ -1,101 +1,99 @@
-# EasyEDA Strain Gauge Designer · 应变片设计
+# EasyEDA Strain Gauge Designer
 
-嘉立创 EDA 专业版的参数化应变片设计插件。
+> A parametric **metal strain-gauge** design plugin for **JLCEDA / EasyEDA Pro**.
 
-A parametric copper strain-gauge designer for JLCEDA / EasyEDA Pro, with staged drawing and optional two-layer terminal routing.
+**English** · [简体中文](README.zh-CN.md)
 
-## 当前状态
+[Design workflow](#1-design-workflow) · [Installation and getting started](#2-installation-and-getting-started) · [Manual wiring](#3-manual-wiring-in-eda) · [Configuration and editing](#4-configuration-and-manual-editing) · [User guide — 中文](USER_GUIDE.md) · [Changelog — 中文](CHANGELOG.md)
 
-当前代码版本 **0.2.0，开发中**。仓库暂为私有，尚未发布 Release。真实 EDA 客户端中的新版本绘图、保存和回读仍需复测；本项目不评价加工后的灵敏度、温漂或标定效果。
+**[v0.2.1 pre-release](https://github.com/G-dab/easyeda-strain-gauge-designer/releases/tag/v0.2.1)** · [Download the extension](https://github.com/G-dab/easyeda-strain-gauge-designer/releases/download/v0.2.1/strain-bridge-designer_v0.2.1.eext)
 
-## 功能
+![Four-quadrant bridge with a bottom FPC tail and ordered routing](docs/routing-channels.png)
 
-- 四象限正交桥芯：四个蛇形敏感栅紧凑互连，敏感栅位于正面铜层。
-- 四步设计：参数检查 → 敏感栅与桥内互连 → 外部引出 → 板框与覆盖膜开窗。
-- 参数面板按步骤切换，提供可展开的参数图解和几何预览。
-- 下方尾部支持焊接焊盘或尺寸可调的 FPC 金手指，四接点顺序可调整。
-- 引出优先使用正面，必要时自动添加通孔和背面线路；可关闭背面走线。
-- 正面／背面独立勾选，支持叠加显示。
-- 保存配置与图元关联，支持实际图形回读、按影响阶段重建及手改保护。
+## 1. Design workflow
 
-![下方端接与双层引出界面](docs/tail-parameters.png)
+| Step | Design controls |
+| --- | --- |
+| 1. Parameter check | Copper thickness for resistance estimation and PCB placement origin |
+| 2. Grids and bridge interconnections | Grid length/count, trace width, edge-to-edge spacing, spacing between adjacent grids and bridge connection width |
+| 3. External terminals | Terminal type, contact order, tail dimensions, lead routing and via settings |
+| 4. Board outline and coverlay openings | Copper-to-board-edge clearance and the body/tail outline; contact openings are created with the contacts |
 
-## 环境要求
+## 2. Installation and getting started
 
-- Node.js **20.17.0 或以上**，以及随 Node 提供的 npm。
-- Git，用于获取与管理源码。
-- 实际绘制 PCB 需要嘉立创 EDA 专业版桌面客户端；目标 API 版本 **4.1.60 或以上**。
-- 浏览器预览不需要 Python，也不需要安装 EDA。
+### 2.1 Requirements
 
-## 本地预览
+- Source builds and browser preview: **Node.js 20.17.0 or later**, with npm, and Git.
+- **JLCEDA / EasyEDA Pro desktop**, targeting version **4.1.60 or later**, to draw into a PCB.
 
-获取项目并在仓库根目录运行：
+Installing the prebuilt extension requires only EDA; Node.js and Git are for source development. Browser preview requires neither EDA nor Python. PCB drawing runs through the EDA extension API.
+
+### 2.2 Download and install (recommended)
+
+Download [`strain-bridge-designer_v0.2.1.eext`](https://github.com/G-dab/easyeda-strain-gauge-designer/releases/download/v0.2.1/strain-bridge-designer_v0.2.1.eext) from the [v0.2.1 release](https://github.com/G-dab/easyeda-strain-gauge-designer/releases/tag/v0.2.1), then import it through the EDA extension manager. Open a separate PCB document and choose **应变片设计 → 打开设计器** (Strain Gauge Design → Open Designer).
+
+This is an early-access pre-release. Software and browser checks have passed; full client drawing, saving and readback still need verification. Before manual wiring, follow the [Remove Loops instructions](#3-manual-wiring-in-eda).
+
+### 2.3 Obtain the source
 
 ```sh
 git clone https://github.com/G-dab/easyeda-strain-gauge-designer.git
 cd easyeda-strain-gauge-designer
 npm ci
+```
+
+### 2.4 Try the browser preview
+
+```sh
 npm run preview
 ```
 
-然后打开 <http://127.0.0.1:8766/designer.html>。此命令会先构建界面，再启动仅监听本机的预览服务器。按 Ctrl+C 停止。
-
-如果端口已被占用：
+Open <http://127.0.0.1:8766/designer.html>. The command builds the UI and starts a local-only server; press Ctrl+C to stop it. If the port is occupied:
 
 ```sh
 npm run preview -- --port 8767
 ```
 
-浏览器支持参数设计、配置导入导出和 SVG 预览；“生成到所选阶段”只能在 EDA 插件内使用。
+The browser supports parameter editing, configuration import/export and SVG export. Drawing into a PCB is available inside the EDA extension.
 
-## 构建和安装插件
-
-目前没有发布可下载的 Release，需从源码构建：
+### 2.5 Build and install from source
 
 ```sh
-npm ci
 npm run build
 ```
 
-构建产物为 `build/dist/strain-bridge-designer_v0.2.0.eext`。在嘉立创 EDA 的扩展管理器导入该文件，打开独立 PCB，再通过“应变片设计 → 打开设计器”使用。
+Import `build/dist/strain-bridge-designer_v0.2.1.eext` through the EDA extension manager. Open a separate PCB document, then choose **应变片设计 → 打开设计器** (Strain Gauge Design → Open Designer).
 
-插件安装包、依赖、缓存和生成文件不提交到源码仓库；后续发布时再将安装包附在 Releases。
+Select the design template, adjust parameters and click **生成到所选阶段** (Generate to selected stage). Generation fills in unfinished earlier stages and stops at the selected stage. Minimize the extension window to edit the PCB manually.
 
-## 使用与配置
+The release includes a SHA-256 checksum file. Extension packages, dependencies, caches and generated files are excluded from the source repository.
 
-- [完整使用说明](USER_GUIDE.md)
-- [金手指示例配置](examples/fpc-fingers.strain.json)
-- [仅桥芯示例配置](examples/default-bridge.strain.json)
-- [项目更新记录](CHANGELOG.md)
+## 3. Manual wiring in EDA
 
-示例配置没有关联 PCB，可在浏览器或插件内打开。0.2.0 使用版本 2 配置；旧版已生成工程请继续保留旧插件和原配置，新版另建实例，避免误改既有图形。
+> **Before connecting an external terminal, turn off 布线 → 移除回路 (Routing → Remove Loops).**
 
-## 检查与测试
+The bridge deliberately contains continuous resistive copper paths. EDA's loop-removal function may treat them as ordinary redundant routing and delete the bridge or vias when a new trace connects. A client test confirmed that disabling this setting allowed wiring while retaining the bridge. See the [official Remove Loops documentation](https://prodocs.lceda.cn/cn/pcb/route-remove-loop/).
 
-```sh
-npm run lint
-npm run typecheck
-npm test
-npm run build
-```
+1. If the bridge disappears after a connection, undo with Ctrl+Z, then disable Remove Loops before retrying.
+2. Read the bridge's existing `SG_<instanceID>` net name and assign it to the external terminal's intended pad. Retain the bridge net name to preserve project associations.
+3. Connect to the intended bridge node. The shared EDA net is a management convention: E+, E−, OUT+ and OUT− still need separate physical leads and must not be shorted together with extra copper.
+4. Inspect the bridge, connections and clearances, then save the PCB.
 
-17 项软件测试覆盖桥芯几何、焊盘与金手指各 24 种接点顺序、分层连通、过孔增删、手改保护、阶段重建和中途失败恢复。EDA API 测试使用模拟接口，不能替代真实客户端验证。
+For a flat junction, use a short lead matching the bridge connection width, then transition to the wider external lead outside the bridge. A wide trace ending directly on a thin trace can leave a rounded copper protrusion. Change the width for subsequent routing while drawing; editing the properties of an entire selected route can change its full width.
 
-## 源码结构
+## 4. Configuration and manual editing
 
-| 路径 | 内容 |
+Use **保存工程与配置** (Save project and configuration) and keep the `.strain.json` file with the EDA project. Use **读取实际图形** (Read actual geometry) after manual edits; **重建此阶段及后续** (Rebuild this stage and later stages) explicitly replaces associated geometry from the selected stage onward.
+
+| Resource | Contents |
 | --- | --- |
-| `src/geometry.ts` | 参数、桥芯／尾部几何与检查 |
-| `src/tail-router.ts` | 有界双层引出路由 |
-| `src/adapter.ts` | EDA 图元、回读、配置与重建 |
-| `src/designer.html`、`src/ui.ts` | 界面源码与交互 |
-| `src/parameter-guide.ts` | 参数图解 |
-| `scripts/` | 界面构建、本地预览和测试工具 |
-| `tests/` | 软件回归测试 |
-| `build/`、`config/` | 基于官方 SDK 的构建工具 |
+| [User guide — Chinese](USER_GUIDE.md) | Parameters, node mapping, manufacturing notes and manual-edit protection |
+| [FPC contact-finger example](examples/fpc-fingers.strain.json) | Unbound configuration with a bottom contact tail |
+| [Bridge-only example](examples/default-bridge.strain.json) | Unbound configuration without external terminals |
+| [Changelog — Chinese](CHANGELOG.md) | Project development history |
 
-`iframe/designer.html`、`iframe/app.js` 和 `dist/` 是生成文件，克隆后由构建命令生成。
+Version 2 configurations from 0.2.0 retain their original routing until the external-terminal stage, or an earlier stage, is explicitly rebuilt. Generated projects using the older version 1 configuration still require their original plugin and project files.
 
-## 来源与许可证
+## Credits and license
 
-本项目基于官方 [easyeda-api-sdk](https://github.com/easyeda/easyeda-api-sdk) 开发，作为独立项目维护，保留上游版权和 [Apache-2.0 许可证](LICENSE)。上游脚手架的旧说明归档于 [docs/upstream-sdk](docs/upstream-sdk/README.md)，不代表本项目已提供对应语言的翻译。
+Developed from the official [easyeda-api-sdk](https://github.com/easyeda/easyeda-api-sdk), with upstream copyright retained under [Apache-2.0](LICENSE). Archived SDK documentation is in [docs/upstream-sdk](docs/upstream-sdk/README.md).

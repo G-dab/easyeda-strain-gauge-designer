@@ -30,12 +30,16 @@ let parameterSelected = false;
 
 const keys = Object.keys(defaults) as (keyof Parameters)[];
 let lastOrder = [defaults.order0, defaults.order1, defaults.order2, defaults.order3];
-let cached: { key: string; design: Design } | undefined;
+const previews = new Map<string, Design>();
 function preview(p: Parameters) {
-	const key = JSON.stringify(p);
-	if (cached?.key !== key)
-		cached = { key, design: build(p) };
-	return cached.design;
+	const version = session.routerVersion === 1 && session.completed >= 3 && JSON.stringify(p) === JSON.stringify(session.parameters) ? 1 : 2;
+	const key = `${version}:${JSON.stringify(p)}`;
+	if (!previews.has(key)) {
+		previews.set(key, build(p, version));
+		if (previews.size > 24)
+			previews.delete(previews.keys().next().value!);
+	}
+	return previews.get(key)!;
 }
 function layerSelection() {
 	return { front: $<HTMLInputElement>('showFront').checked, back: $<HTMLInputElement>('showBack').checked };
@@ -159,6 +163,9 @@ function render() {
 	$('identity').textContent = `设计 ${session.id.slice(0, 6)}`;
 
 	$('state').textContent = session.completed ? `已写入至「${stages[session.completed]}」${session.manual ? ' · 已检测到手改，保留实际图形' : ''}` : '尚未写入 PCB';
+
+	if (session.routerVersion === 1 && session.completed >= 3 && session.parameters.terminalMode)
+		$('state').textContent += '\n已保留旧版引出图形；明确重建“外部引出”后才应用规整布线。';
 
 	try {
 		const affected = changedStage(session.parameters, values());

@@ -3,7 +3,7 @@
 	"uuid": "96fe8e132b734429971907918d5e40a9",
 	"displayName": "应变片设计",
 	"description": "四象限设计(单面)：参数化布局、分阶段绘图与配置管理",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"publisher": "G-dab",
 	"engines": {
 		"eda": ">=4.1.60"

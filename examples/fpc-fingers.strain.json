@@ -38,5 +38,6 @@
 	},
 	"completed": 0,
 	"records": [],
-	"manual": false
+	"manual": false,
+	"routerVersion": 2
 }
